@@ -1,0 +1,113 @@
+---
+title: "Prediction Assignment"
+author: "Salvador J Nunez"
+date: "December 27, 2015"
+output: html_document
+---
+
+##Summary
+
+Subjects using wearable devices (Jawbone Up, Nike FuelBand, FitBit, etc.) are asked to perform barbell lifts. Five different ways of (correct and incorrect) of performing the exercise are categorize. Machine learning techniques are used to recognize and predict these the way in which each exercise is done. After separating the training data set into training and validation subsets, models based on regression trees and random forests are attempted and analyzed. While regression trees produced an acccuracy of 66%, random forests yieled an accuracy over 99%. Thus, the random forest model is used on the testing data set and used for the submission.
+
+
+##Analysis
+
+First, we take care of some general housekeeping by doanloading the required packages and defining functions we will use later in this document. 
+```{r setup, echo = FALSE}
+
+##load packages and define functions
+library(caret)
+library(rpart)
+```
+
+Second, we download and load the data into a seperate folder in the working directory.
+```{r load data,}
+##set URLs and files
+trainingUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testingUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainingFile <- "./data/pml-training.csv"
+testingFile  <- "./data/pml-testing.csv"
+
+##create folders and download files
+if (!file.exists("./data")) {dir.create("./data")}
+if (!file.exists(trainingFile)) {download.file(trainingUrl, destfile=trainingFile, method="curl")}
+if (!file.exists(testingFile)) {download.file(testingUrl, destfile=testingFile, method="curl")}
+
+##read data
+training <- read.csv(trainingFile)
+testing <- read.csv(testingFile)
+```
+
+Then, clean the data to reduce the noise and further partition the training data set for validation. 
+```{r clean data,}
+
+##Remove columns where more than 50% of the records are NA
+NAcols <- colSums(is.na(training)) >nrow(training)*0.50
+NAtraining <- training[!NAcols] 
+
+##Remove highly correlated columns over 95% and remove factor variables
+numericCols <- sapply(NAtraining, is.numeric)
+numericTraining <- NAtraining[,numericCols]
+numericTraining$classe <- as.numeric(NAtraining$classe)
+HighCor = findCorrelation(cor(numericTraining), cutoff=0.95) 
+numericTraining <- numericTraining[,-c(HighCor)] 
+numericTraining$classe <- NAtraining$classe
+
+##Remove uninformative zero variance columns
+ZeroVarcols <- nearZeroVar(numericTraining)
+cleanTraining <- numericTraining[,!c(names(numericTraining) %in% ZeroVarcols)]
+
+##Split the data set into a pure training data set (60%) and a validation data set (40%)
+inTrain   <- createDataPartition(cleanTraining$classe, p=0.6, list=F)
+PureTrainingData <- cleanTraining[inTrain, ]
+ValidationData  <- cleanTraining[-inTrain, ]
+
+##Clean testing data
+CleanTesting <- testing[,c(names(testing) %in% names(cleanTraining))]
+
+```
+
+First, we fit a model using recursive partitioning and regression trees and inspect the confusion matrix on the validation data set. 
+```{r repart,}
+##Train
+RPartTrainFit <- train(classe~., data=PureTrainingData, method="rpart")
+
+##Validate
+predictRPart <- predict(RPartTrainFit, ValidationData)
+confusionMatrix(predictRPart,ValidationData$classe)
+
+```
+
+Then, we fit the model to a random forest to see if we obtain better accuracy.
+```{r random forests,}
+##Train
+RFtrainFit <- train(classe ~ ., data = PureTrainingData, method = "rf", prox = TRUE, 
+               trControl = trainControl(method = "cv", number = 3, allowParallel = TRUE))
+
+##Validate
+predictRFval <- predict(RFtrainFit, ValidationData)
+confusionMatrix(ValidationData$classe, predictRFval)
+```
+
+Random forests provide perfect accuracy in the validation data set. Whereas regression trees misclassify classe "C". Instead of improving the accuracy for the regression trees, we cautiously use the random forest model for the test. The perfect accuracy is suspect and may reflect some overfitting.
+
+Finally, apply the model(s) to the test data set. See how different the results that they yield are, and then save the test result files in the working directory for submission.
+```{r submission,}
+
+##Predict
+predict(RPartTrainFit, newdata=CleanTesting)
+predict(RFtrainFit, newdata=CleanTesting)
+FinalTestPredictions <- predict(RFtrainFit, newdata=CleanTesting)
+
+
+#Write files with coursera function
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(FinalTestPredictions)
+
+```
