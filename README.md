@@ -1,2 +1,2 @@
 # CourseraJHMachineLearningPredictionAssignment
-Repository to submit my code for the prediction assignment.
+For convenience, see: <http://rpubs.com/torenunez/138668>

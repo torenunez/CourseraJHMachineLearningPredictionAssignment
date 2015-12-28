@@ -70,11 +70,11 @@ img {
 
 <div id="summary" class="section level2">
 <h2>Summary</h2>
-<p>Subjects using wearable devices (Jawbone Up, Nike FuelBand, FitBit, etc.) are asked to perform barbell lifts. Five different ways of (correct and incorrect) of performing the exercise are categorize. Machine learning techniques are used to recognize and predict these the way in which each exercise is done. After separating the training data set into training and validation subsets, models based on regression trees and random forests are attempted and analyzed. While regression trees produced an acccuracy of 66%, random forests yieled an accuracy over 99%. Thus, the random forest model is used on the testing data set and used for the submission.</p>
+<p>Subjects using wearable devices (Jawbone Up, Nike FuelBand, FitBit, etc.) are asked to perform barbell lifts. Five different ways (correct and incorrect) of performing the exercise are categorized in “classes”. Machine learning techniques are used to recognize and predict these “classes” . After separating the training data set into training and validation subsets, models based on regression trees and random forests are attempted and analyzed. While regression trees produced an acccuracy of 49%, random forests yieled an accuracy over 99%. Thus, the random forest model is used on the testing data set and used for the submission.</p>
 </div>
 <div id="analysis" class="section level2">
 <h2>Analysis</h2>
-<p>First, we take care of some general housekeeping by doanloading the required packages and defining functions we will use later in this document.</p>
+<p>First, we take care of some general housekeeping by downloading the required packages.</p>
 <pre><code>## Loading required package: lattice
 ## Loading required package: ggplot2</code></pre>
 <p>Second, we download and load the data into a seperate folder in the working directory.</p>
@@ -90,32 +90,25 @@ if (!file.exists(trainingFile)) {download.file(trainingUrl, destfile=trainingFil
 if (!file.exists(testingFile)) {download.file(testingUrl, destfile=testingFile, method=&quot;curl&quot;)}
 
 ##read data
-training &lt;- read.csv(trainingFile)
-testing &lt;- read.csv(testingFile)</code></pre>
+training &lt;- read.csv(trainingFile, na.strings=c(&quot;NA&quot;,&quot;&quot;))
+testing &lt;-read.csv(testingFile, na.strings=c(&quot;NA&quot;,&quot;&quot;))</code></pre>
 <p>Then, clean the data to reduce the noise and further partition the training data set for validation.</p>
-<pre class="r"><code>##Remove columns where more than 50% of the records are NA
-NAcols &lt;- colSums(is.na(training)) &gt;nrow(training)*0.50
-NAtraining &lt;- training[!NAcols] 
+<pre class="r"><code>##Clean Training
+columnNACounts &lt;- colSums(is.na(training))     
+NAcols &lt;- columnNACounts &gt;= nrow(training)*0.9          
+CleanTraining &lt;- training[!NAcols]     
+CleanTraining &lt;- CleanTraining[, c(7:60)] 
 
-##Remove highly correlated columns over 95% and remove factor variables
-numericCols &lt;- sapply(NAtraining, is.numeric)
-numericTraining &lt;- NAtraining[,numericCols]
-numericTraining$classe &lt;- as.numeric(NAtraining$classe)
-HighCor = findCorrelation(cor(numericTraining), cutoff=0.95) 
-numericTraining &lt;- numericTraining[,-c(HighCor)] 
-numericTraining$classe &lt;- NAtraining$classe
+##Clean Testing
+columnNACounts &lt;- colSums(is.na(testing))       
+NAcols &lt;- columnNACounts &gt;= nrow(testing)*0.9               
+CleanTesting &lt;- testing[!NAcols]       
+CleanTesting &lt;- CleanTesting[, c(7:60)] 
 
-##Remove uninformative zero variance columns
-ZeroVarcols &lt;- nearZeroVar(numericTraining)
-cleanTraining &lt;- numericTraining[,!c(names(numericTraining) %in% ZeroVarcols)]
-
-##Split the data set into a pure training data set (60%) and a validation data set (40%)
-inTrain   &lt;- createDataPartition(cleanTraining$classe, p=0.6, list=F)
-PureTrainingData &lt;- cleanTraining[inTrain, ]
-ValidationData  &lt;- cleanTraining[-inTrain, ]
-
-##Clean testing data
-CleanTesting &lt;- testing[,c(names(testing) %in% names(cleanTraining))]</code></pre>
+##Partition and create Validation
+inTrain &lt;- createDataPartition(y = CleanTraining$classe, p = 0.6, list = FALSE)
+PureTrainingData &lt;- CleanTraining[inTrain, ]
+ValidationData &lt;- CleanTraining[-inTrain, ]</code></pre>
 <p>First, we fit a model using recursive partitioning and regression trees and inspect the confusion matrix on the validation data set.</p>
 <pre class="r"><code>##Train
 RPartTrainFit &lt;- train(classe~., data=PureTrainingData, method=&quot;rpart&quot;)
@@ -127,37 +120,38 @@ confusionMatrix(predictRPart,ValidationData$classe)</code></pre>
 ## 
 ##           Reference
 ## Prediction    A    B    C    D    E
-##          A 2232    1    0    0    0
-##          B    0 1517    0    0    0
-##          C    0    0    0    0    0
+##          A 2028  625  655  544  145
+##          B   29  523   51  214  102
+##          C  166  370  662  461  302
 ##          D    0    0    0    0    0
-##          E    0    0 1368 1286 1442
+##          E    9    0    0   67  893
 ## 
 ## Overall Statistics
-##                                          
-##                Accuracy : 0.6616         
-##                  95% CI : (0.651, 0.6721)
-##     No Information Rate : 0.2845         
-##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16      
-##                                          
-##                   Kappa : 0.5693         
-##  Mcnemar's Test P-Value : NA             
+##                                           
+##                Accuracy : 0.5233          
+##                  95% CI : (0.5122, 0.5344)
+##     No Information Rate : 0.2845          
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
+##                                           
+##                   Kappa : 0.3778          
+##  Mcnemar's Test P-Value : &lt; 2.2e-16       
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity            1.0000   0.9993   0.0000   0.0000   1.0000
-## Specificity            0.9998   1.0000   1.0000   1.0000   0.5856
-## Pos Pred Value         0.9996   1.0000      NaN      NaN   0.3521
-## Neg Pred Value         1.0000   0.9998   0.8256   0.8361   1.0000
-## Prevalence             0.2845   0.1935   0.1744   0.1639   0.1838
-## Detection Rate         0.2845   0.1933   0.0000   0.0000   0.1838
-## Detection Prevalence   0.2846   0.1933   0.0000   0.0000   0.5220
-## Balanced Accuracy      0.9999   0.9997   0.5000   0.5000   0.7928</code></pre>
+## Sensitivity            0.9086  0.34453  0.48392   0.0000   0.6193
+## Specificity            0.6493  0.93742  0.79948   1.0000   0.9881
+## Pos Pred Value         0.5074  0.56910  0.33758      NaN   0.9216
+## Neg Pred Value         0.9470  0.85636  0.88003   0.8361   0.9202
+## Prevalence             0.2845  0.19347  0.17436   0.1639   0.1838
+## Detection Rate         0.2585  0.06666  0.08437   0.0000   0.1138
+## Detection Prevalence   0.5094  0.11713  0.24994   0.0000   0.1235
+## Balanced Accuracy      0.7789  0.64098  0.64170   0.5000   0.8037</code></pre>
+<pre class="r"><code>RPartErrorRate = 1 - confusionMatrix(predictRPart,ValidationData$classe)$overall[1]</code></pre>
 <p>Then, we fit the model to a random forest to see if we obtain better accuracy.</p>
 <pre class="r"><code>##Train
 RFtrainFit &lt;- train(classe ~ ., data = PureTrainingData, method = &quot;rf&quot;, prox = TRUE, 
-               trControl = trainControl(method = &quot;cv&quot;, number = 3, allowParallel = TRUE))</code></pre>
+               trControl = trainControl(method = &quot;cv&quot;, number = 4, allowParallel = TRUE))</code></pre>
 <pre><code>## Loading required package: randomForest
 ## randomForest 4.6-12
 ## Type rfNews() to see new features/changes/bug fixes.</code></pre>
@@ -169,40 +163,41 @@ confusionMatrix(ValidationData$classe, predictRFval)</code></pre>
 ##           Reference
 ## Prediction    A    B    C    D    E
 ##          A 2232    0    0    0    0
-##          B    1 1517    0    0    0
-##          C    0    1 1367    0    0
-##          D    0    0    0 1286    0
-##          E    0    0    0    0 1442
+##          B    9 1508    1    0    0
+##          C    0    3 1365    0    0
+##          D    0    0    2 1283    1
+##          E    0    0    0    3 1439
 ## 
 ## Overall Statistics
-##                                      
-##                Accuracy : 0.9997     
-##                  95% CI : (0.9991, 1)
-##     No Information Rate : 0.2846     
-##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16  
-##                                      
-##                   Kappa : 0.9997     
-##  Mcnemar's Test P-Value : NA         
+##                                           
+##                Accuracy : 0.9976          
+##                  95% CI : (0.9962, 0.9985)
+##     No Information Rate : 0.2856          
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
+##                                           
+##                   Kappa : 0.9969          
+##  Mcnemar's Test P-Value : NA              
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity            0.9996   0.9993   1.0000   1.0000   1.0000
-## Specificity            1.0000   0.9998   0.9998   1.0000   1.0000
-## Pos Pred Value         1.0000   0.9993   0.9993   1.0000   1.0000
-## Neg Pred Value         0.9998   0.9998   1.0000   1.0000   1.0000
-## Prevalence             0.2846   0.1935   0.1742   0.1639   0.1838
-## Detection Rate         0.2845   0.1933   0.1742   0.1639   0.1838
+## Sensitivity            0.9960   0.9980   0.9978   0.9977   0.9993
+## Specificity            1.0000   0.9984   0.9995   0.9995   0.9995
+## Pos Pred Value         1.0000   0.9934   0.9978   0.9977   0.9979
+## Neg Pred Value         0.9984   0.9995   0.9995   0.9995   0.9998
+## Prevalence             0.2856   0.1926   0.1744   0.1639   0.1835
+## Detection Rate         0.2845   0.1922   0.1740   0.1635   0.1834
 ## Detection Prevalence   0.2845   0.1935   0.1744   0.1639   0.1838
-## Balanced Accuracy      0.9998   0.9996   0.9999   1.0000   1.0000</code></pre>
-<p>Random forests provide perfect accuracy in the validation data set. Whereas regression trees misclassify classe “C”. Instead of improving the accuracy for the regression trees, we cautiously use the random forest model for the test. The perfect accuracy is suspect and may reflect some overfitting.</p>
-<p>Finally, apply the model(s) to the test data set. See how different the results that they yield are, and then save the test result files in the working directory for submission.</p>
+## Balanced Accuracy      0.9980   0.9982   0.9987   0.9986   0.9994</code></pre>
+<pre class="r"><code>RFErrorRate = 1 - confusionMatrix(ValidationData$classe, predictRFval)$overall[1]</code></pre>
+<p>Random forests provide near perfect accuracy in the validation data set with an error rate of <code>r RFErrorRate</code>. Whereas regression trees misclassify classe “C” and yielded an error rate of <code>r RPartTrainFit</code>. Instead of improving the accuracy for the regression trees, we cautiously use the random forest model for the test. The near perfect accuracy is suspect and may reflect some overfitting.</p>
+<p>Finally, apply the model(s) to the test data set. Both models are used, to see how different the results are. However, only the random forest predictions are saved in the test result files and used for submission.</p>
 <pre class="r"><code>##Predict
 predict(RPartTrainFit, newdata=CleanTesting)</code></pre>
-<pre><code>##  [1] A A A A A A A A A A A A A A A A A A A A
+<pre><code>##  [1] C A C A A C C A A A C C C A C A A A A C
 ## Levels: A B C D E</code></pre>
 <pre class="r"><code>predict(RFtrainFit, newdata=CleanTesting)</code></pre>
-<pre><code>##  [1] A A A A A A A A A A A A A A A A A A A A
+<pre><code>##  [1] B A B A A E D B A A B C B A E E A B B B
 ## Levels: A B C D E</code></pre>
 <pre class="r"><code>FinalTestPredictions &lt;- predict(RFtrainFit, newdata=CleanTesting)
 
